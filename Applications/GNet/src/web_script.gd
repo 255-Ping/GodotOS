@@ -222,7 +222,6 @@ func _inject_content_with_textures() -> void:
 
 		if src in _image_textures:
 			var tex: ImageTexture = _image_textures[src]
-			# Scale down to fit the content panel, preserving aspect ratio.
 			var max_w: float = content.size.x if content.size.x > 0 else 600.0
 			var w: float = minf(float(tex.get_width()), max_w)
 			var h: float = float(tex.get_height()) * (w / float(tex.get_width()))
@@ -233,9 +232,8 @@ func _inject_content_with_textures() -> void:
 			else:
 				content.add_image(tex, int(w), int(h))
 		else:
-			# Image not loaded yet — show a placeholder so text layout stays stable.
-			var fallback: String = "[url=%s]🔗 [image][/url]" % href if href else "[image]"
-			content.append_text(fallback)
+			if href:
+				content.append_text("[url=%s]🔗[/url]" % href)
 
 		last_end = m.get_end()
 

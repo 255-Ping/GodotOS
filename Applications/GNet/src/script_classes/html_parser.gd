@@ -144,7 +144,19 @@ static func to_bbcode(html: String) -> String:
 	text = _strip_tag_block(text, "script")
 	text = _strip_tag_block(text, "style")
 	text = _strip_tag_block(text, "nav")
+	text = _strip_tag_block(text, "aside")
+	text = _strip_tag_block(text, "header")
 	text = _strip_tag_block(text, "footer")
+	text = _strip_tag_block(text, "figure")
+	text = _strip_tag_block(text, "picture")
+	text = _strip_tag_block(text, "noscript")
+	text = _strip_tag_block(text, "dialog")
+	text = _strip_tag_block(text, "template")
+
+	# Strip HTML comments — <!-- ... -->
+	var comment_regex: = RegEx.new()
+	comment_regex.compile("<!--[\\s\\S]*?-->")
+	text = comment_regex.sub(text, "", true)
 
 	# Convert tables before other processing so their inner tags
 	# don't get mangled by the generic tag replacements below.
@@ -154,6 +166,16 @@ static func to_bbcode(html: String) -> String:
 	# <a href="..."><img src="..."></a> becomes a clickable image
 	# rather than a broken link with an empty label.
 	text = inject_inline_svg_placeholders(text)
+
+	# Strip tiny images that are decorative — width/height under 64px.
+	# These are favicons, avatars, and UI icons that clutter text flow.
+	var tiny_img_regex: = RegEx.new()
+	tiny_img_regex.compile("<img[^>]*(?:width|height)=[\"']?([0-9]+)[\"']?[^>]*>")
+	for m in tiny_img_regex.search_all(text):
+		var size: int = m.get_string(1).to_int()
+		if size > 0 and size <= 64:
+			text = text.replace(m.get_string(0), "")
+
 	text = inject_image_placeholders(text)
 
 	# Block-level elements — add line breaks at closing tags.
@@ -185,6 +207,25 @@ static func to_bbcode(html: String) -> String:
 	text = _replace_tag(text, "code",   "[code]", "[/code]")
 	text = _replace_tag(text, "li",     "• ",     "")
 
+	# Inline color — only match spans that actually contain a closing tag
+	# so we can pair [color] and [/color] without leaking orphan close tags.
+	var color_regex: = RegEx.new()
+	color_regex.compile("(?i)<span[^>]*style=[\"'][^\"']*color\\s*:\\s*(#[0-9a-fA-F]{3,6})[^\"']*[\"'][^>]*>([\\s\\S]*?)</span>")
+	for m in color_regex.search_all(text):
+		text = text.replace(m.get_string(0),
+			"[color=%s]%s[/color]" % [m.get_string(1), m.get_string(2)])
+
+	# Strip any remaining spans that had no color — don't emit [/color] for them.
+	text = text.replace("</span>", "")
+
+	# Legacy <font color="..."> tags.
+	var font_regex: = RegEx.new()
+	font_regex.compile("(?i)<font[^>]*color=[\"'](#[0-9a-fA-F]{3,6})[\"'][^>]*>([\\s\\S]*?)</font>")
+	for m in font_regex.search_all(text):
+		text = text.replace(m.get_string(0),
+			"[color=%s]%s[/color]" % [m.get_string(1), m.get_string(2)])
+	text = text.replace("</font>", "")
+
 	# Links — three cases:
 	#   1. Link wraps an image placeholder → keep placeholder as label
 	#   2. Link has no visible label (icon-only link) → show a 🔗 glyph
@@ -211,12 +252,28 @@ static func to_bbcode(html: String) -> String:
 	text = tag_regex.sub(text, "", true)
 
 	# Decode the most common HTML entities.
-	text = text.replace("&amp;",  "&")
-	text = text.replace("&lt;",   "<")
-	text = text.replace("&gt;",   ">")
-	text = text.replace("&quot;", "\"")
-	text = text.replace("&#39;",  "'")
-	text = text.replace("&nbsp;", " ")
+	text = text.replace("&amp;",   "&")
+	text = text.replace("&lt;",    "<")
+	text = text.replace("&gt;",    ">")
+	text = text.replace("&quot;",  "\"")
+	text = text.replace("&#39;",   "'")
+	text = text.replace("&nbsp;",  " ")
+	text = text.replace("&raquo;", "»")
+	text = text.replace("&laquo;", "«")
+	text = text.replace("&mdash;", "—")
+	text = text.replace("&ndash;", "–")
+	text = text.replace("&hellip;","…")
+	text = text.replace("&copy;",  "©")
+	text = text.replace("&reg;",   "®")
+	text = text.replace("&trade;", "™")
+	text = text.replace("&euro;",  "€")
+	text = text.replace("&pound;", "£")
+
+	# Remove lines that are nothing but whitespace — these come from
+	# gutted div containers that held CSS background images or layout boxes.
+	var empty_line_regex: = RegEx.new()
+	empty_line_regex.compile("(?m)^[ \\t]+$")
+	text = empty_line_regex.sub(text, "", true)
 
 	# Collapse runs of 3+ newlines down to a single blank line.
 	var blank_regex: = RegEx.new()
