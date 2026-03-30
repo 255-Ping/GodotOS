@@ -9,6 +9,7 @@ extends Control
 ##     → _inject_content_with_textures() rebuilds content with real textures
 ##     → _on_all_images_done() → final status update
 
+signal page_loaded(title: String)
 
 const DEFAULT_HOME: String = ""
 const MAX_REDIRECTS: int = 5
@@ -144,6 +145,7 @@ func _on_request_completed(
 func _finish_page(html: String) -> void:
 	var title: String = _extract_title(html)
 	status_label.text = "✓  %s" % (title if title else _current_url)
+	page_loaded.emit(title if title else _current_url)
 
 
 # ── Link clicks ───────────────────────────────────────────────────────────────
@@ -195,6 +197,7 @@ func _on_image_ready(src: String, texture: ImageTexture) -> void:
 func _on_all_images_done() -> void:
 	_inject_content_with_textures()
 	status_label.text = "✓  %s" % _current_url
+	page_loaded.emit(_current_url)
 
 
 # Rebuilds the RichTextLabel content, replacing every [[IMG:url]] placeholder

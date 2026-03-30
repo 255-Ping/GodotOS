@@ -109,7 +109,7 @@ modulate = Color(0.91056484, 0.5161954, 0, 1)
 [node name="GNet Option" parent="StartMenuAnchor/Start Menu/VBoxContainer" unique_id=1777990746 instance=ExtResource("2_1ualm")]
 layout_mode = 2
 game_scene = ""
-application_scene = "uid://c1w5stafryulx"
+application_scene = "uid://dhdnkc3nchqae"
 title_text = "GNet"
 description_text = "Browse the web!"
 use_generic_pause_menu = false
