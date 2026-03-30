@@ -93,13 +93,13 @@ func _decode_data_uri(src: String) -> void:
 # The node frees itself after the response arrives.
 func _fetch_one(src: String, referer: String = "") -> void:
 	if src.length() < 10 or not (src.begins_with("http://") or src.begins_with("https://")):
-		print("IMG skipped invalid URL: ", src)
+		#print("IMG skipped invalid URL: ", src)
 		_pending -= 1
 		if _pending <= 0:
 			all_done.emit()
 		return
 
-	print("IMG fetching: ", src)
+	#print("IMG fetching: ", src)
 
 	var http: = HTTPRequest.new()
 	http.use_threads = true
@@ -114,7 +114,7 @@ func _fetch_one(src: String, referer: String = "") -> void:
 
 	var err: = http.request(src, headers)
 	if err != OK:
-		print("IMG request error: ", src)
+		#print("IMG request error: ", src)
 		http.queue_free()
 		_pending -= 1
 		if _pending <= 0:
@@ -135,8 +135,8 @@ func _on_image_fetched(
 			content_type = h.substr(13).strip_edges().to_lower()
 			break
 
-	print("IMG response | src: %s | code: %d | type: %s | bytes: %d" % [
-		src, code, content_type, body.size()])
+	#print("IMG response | src: %s | code: %d | type: %s | bytes: %d" % [
+	#	src, code, content_type, body.size()])
 
 	if result == HTTPRequest.RESULT_SUCCESS and code == 200 and body.size() > 0:
 		var img: = Image.new()

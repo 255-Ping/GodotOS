@@ -13,6 +13,13 @@ signal page_loaded(title: String)
 
 const DEFAULT_HOME: String = ""
 const MAX_REDIRECTS: int = 5
+const DOWNLOAD_EXTENSIONS: Array[String] = [
+	"pdf", "zip", "tar", "gz", "exe", "dmg", "pkg",
+	"mp3", "mp4", "wav", "ogg", "avi", "mkv",
+	"png", "jpg", "jpeg", "gif", "svg", "webp",
+	"txt", "md", "csv", "json", "xml", "gd", "py",
+	"doc", "docx", "xls", "xlsx", "ppt", "pptx",
+]
 
 @onready var address_bar: LineEdit = $VBox/TopBar/AddressBar
 @onready var back_btn: Button = $VBox/TopBar/BackBtn
@@ -25,6 +32,7 @@ const MAX_REDIRECTS: int = 5
 @onready var image_loader: ImageLoader = $ImageLoader
 @onready var http: HTTPRequest = $HTTPRequest
 @onready var bg: ColorRect = $bg
+@onready var context_menu: PopupMenu = _create_context_menu()
 
 var history: BrowserHistory = BrowserHistory.new()
 var _current_url: String = ""
@@ -32,6 +40,10 @@ var _redirect_count: int = 0
 var _pending_bbcode: String = ""
 # Textures keyed by resolved image URL — populated as images finish loading.
 var _image_textures: Dictionary = {}
+
+var _context_target_url: String = ""
+var _context_target_src: String = ""
+var _context_is_image: bool = false
 
 
 func _ready() -> void:
@@ -44,6 +56,9 @@ func _ready() -> void:
 	refresh_btn.pressed.connect(_on_refresh)
 	go_btn.pressed.connect(_on_go)
 	address_bar.text_submitted.connect(_on_address_submitted)
+	content.meta_hover_started.connect(_on_meta_hover_started)
+	content.meta_hover_ended.connect(_on_meta_hover_ended)
+	content.gui_input.connect(_on_content_gui_input)
 
 	if DEFAULT_HOME != "":
 		navigate(DEFAULT_HOME)
@@ -152,7 +167,18 @@ func _finish_page(html: String) -> void:
 
 
 func _on_link_clicked(meta: Variant) -> void:
-	navigate(_resolve_url(str(meta), _current_url))
+	var url: String = str(meta)
+	if url.begins_with("__YTOPEN__"):
+		OS.shell_open(url.substr(10))
+		return
+	
+	# Check if the URL points to a downloadable file.
+	var ext: String = url.get_file().get_extension().to_lower()
+	if ext in DOWNLOAD_EXTENSIONS:
+		_start_download(url)
+		return
+	
+	navigate(_resolve_url(url, _current_url))
 
 
 # ── Toolbar signal handlers ───────────────────────────────────────────────────
@@ -243,6 +269,83 @@ func _inject_content_with_textures() -> void:
 	var tail: String = remaining.substr(last_end)
 	if tail:
 		content.append_text(tail)
+		
+# ── Downloads ─────────────────────────────────────────────────────────────────
+
+
+func _start_download(url: String) -> void:
+	var filename: String = url.get_file()
+	if filename.is_empty():
+		filename = "download"
+	
+	status_label.text = "Downloading %s…" % filename
+	
+	var download_http: = HTTPRequest.new()
+	download_http.use_threads = true
+	download_http.timeout = 60.0
+	add_child(download_http)
+	download_http.set_meta("url", url)
+	download_http.set_meta("filename", filename)
+	download_http.request_completed.connect(_on_download_completed.bind(download_http))
+	
+	var headers: Array[String] = [
+		"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+	]
+	
+	download_http.request(url, headers)
+
+
+func _on_download_completed(
+		result: int, code: int,
+		_headers: PackedStringArray, body: PackedByteArray,
+		download_http: HTTPRequest) -> void:
+	var filename: String = download_http.get_meta("filename", "download")
+	download_http.queue_free()
+	
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or body.size() == 0:
+		status_label.text = "Download failed: %s" % filename
+		return
+	
+	# Save to GodotOS downloads folder.
+	var save_path: String = "user://files/Downloads/" + filename
+	DirAccess.make_dir_recursive_absolute("user://files/Downloads")
+	
+	var file: = FileAccess.open(save_path, FileAccess.WRITE)
+	if file:
+		file.store_buffer(body)
+		file.close()
+		status_label.text = "Downloaded: %s" % filename
+		_show_download_toast(filename, save_path)
+	else:
+		status_label.text = "Save failed: %s" % filename
+
+
+func _show_download_toast(filename: String, _path: String) -> void:
+	# Show a small popup so the user knows where the file went.
+	var toast: = Label.new()
+	toast.text = "✓ Saved: %s" % filename
+	toast.add_theme_color_override("font_color", Color.WHITE)
+	toast.add_theme_stylebox_override("normal", _make_toast_style())
+	toast.position = Vector2(8, content.size.y - 40)
+	add_child(toast)
+	
+	# Auto-dismiss after 3 seconds.
+	await get_tree().create_timer(3.0).timeout
+	toast.queue_free()
+
+
+func _make_toast_style() -> StyleBoxFlat:
+	var style: = StyleBoxFlat.new()
+	style.bg_color = Color(0.1, 0.6, 0.2, 0.9)
+	style.corner_radius_top_left = 4
+	style.corner_radius_top_right = 4
+	style.corner_radius_bottom_left = 4
+	style.corner_radius_bottom_right = 4
+	style.content_margin_left = 12.0
+	style.content_margin_right = 12.0
+	style.content_margin_top = 6.0
+	style.content_margin_bottom = 6.0
+	return style
 
 
 # ── Private helpers ───────────────────────────────────────────────────────────
@@ -319,3 +422,105 @@ func _show_error(msg: String) -> void:
 	content.text = "⚠ " + msg
 	status_label.text = msg
 	_set_loading(false)
+	
+func _create_context_menu() -> PopupMenu:
+	var menu: = PopupMenu.new()
+	add_child(menu)
+	menu.add_item("Open Link",          0)
+	menu.add_item("Open in New Tab",    1)
+	menu.add_item("Copy Link",          2)
+	menu.add_separator()
+	menu.add_item("Save Image As…",     3)
+	menu.add_separator()
+	menu.add_item("Back",               4)
+	menu.add_item("Forward",            5)
+	menu.add_item("Refresh",            6)
+	menu.id_pressed.connect(_on_context_menu_pressed)
+	return menu
+
+func _on_content_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+			_show_context_menu(get_global_mouse_position())
+
+
+func _show_context_menu(pos: Vector2) -> void:
+	_context_is_image = false
+	_context_target_src = ""
+
+	# Check if the hovered link points to an image.
+	if _context_target_url != "":
+		var ext: String = _context_target_url.get_file().get_extension().to_lower()
+		if ext in ["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"]:
+			_context_is_image = true
+			_context_target_src = _context_target_url
+
+	# If not a link image, check if any loaded texture is near the cursor.
+	if not _context_is_image and not _image_textures.is_empty():
+		_context_is_image = true
+		_context_target_src = _image_textures.keys()[0]
+
+	# Update which items are enabled.
+	var has_link: bool = _context_target_url != ""
+	context_menu.set_item_disabled(context_menu.get_item_index(0), not has_link)
+	context_menu.set_item_disabled(context_menu.get_item_index(1), not has_link)
+	context_menu.set_item_disabled(context_menu.get_item_index(2), not has_link)
+	context_menu.set_item_disabled(context_menu.get_item_index(3), not _context_is_image)
+
+	context_menu.position = Vector2i(int(pos.x), int(pos.y))
+	context_menu.popup()
+	
+func _on_context_menu_pressed(id: int) -> void:
+	match id:
+		0:  # Open Link
+			if _context_target_url:
+				navigate(_context_target_url)
+		1:  # Open in New Tab
+			if _context_target_url:
+				# Signal up to the tab manager to open a new tab.
+				# Adjust this to however your tab system opens URLs.
+				get_parent().open_tab(_context_target_url)
+		2:  # Copy Link
+			if _context_target_url:
+				DisplayServer.clipboard_set(_context_target_url)
+				status_label.text = "Copied: %s" % _context_target_url
+		3:  # Save Image As
+			if _context_target_src:
+				_save_image_from_cache(_context_target_src)
+		4:  # Back
+			_on_back()
+		5:  # Forward
+			_on_forward()
+		6:  # Refresh
+			_on_refresh()
+
+
+func _save_image_from_cache(src: String) -> void:
+	# If the texture is already in cache, save it directly without re-downloading.
+	if src in _image_textures:
+		var tex: ImageTexture = _image_textures[src]
+		var img: Image = tex.get_image()
+		var filename: String = src.get_file()
+		if filename.is_empty() or not filename.contains("."):
+			filename = "image.png"
+
+		DirAccess.make_dir_recursive_absolute("user://files/Downloads")
+		var save_path: String = "user://files/Downloads/" + filename
+
+		var err: int = img.save_png(save_path)
+		if err == OK:
+			status_label.text = "Saved: %s" % filename
+			_show_download_toast(filename, save_path)
+		else:
+			status_label.text = "Save failed: %s" % filename
+	else:
+		# Not in cache yet — download it fresh.
+		_start_download(src)
+	
+
+func _on_meta_hover_started(meta: Variant) -> void:
+	_context_target_url = _resolve_url(str(meta), _current_url)
+
+
+func _on_meta_hover_ended(_meta: Variant) -> void:
+	_context_target_url = ""
