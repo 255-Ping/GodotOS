@@ -143,8 +143,8 @@ static func to_bbcode(html: String) -> String:
 	text = _strip_tag_block(text, "head")
 	text = _strip_tag_block(text, "script")
 	text = _strip_tag_block(text, "style")
-	text = _strip_tag_block(text, "nav")
-	text = _strip_tag_block(text, "aside")
+	#text = _strip_tag_block(text, "nav")
+	#text = _strip_tag_block(text, "aside")
 	text = _strip_tag_block(text, "header")
 	text = _strip_tag_block(text, "footer")
 	text = _strip_tag_block(text, "figure")
@@ -173,7 +173,7 @@ static func to_bbcode(html: String) -> String:
 	tiny_img_regex.compile("<img[^>]*(?:width|height)=[\"']?([0-9]+)[\"']?[^>]*>")
 	for m in tiny_img_regex.search_all(text):
 		var size: int = m.get_string(1).to_int()
-		if size > 0 and size <= 64:
+		if size > 0 and size <= 16:
 			text = text.replace(m.get_string(0), "")
 
 	text = inject_image_placeholders(text)

@@ -58,7 +58,14 @@ text = "↺"
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Content" type="RichTextLabel" parent="VBox/ScrollContainer" unique_id=1164683828]
+[node name="CenterContainer" type="CenterContainer" parent="VBox/ScrollContainer" unique_id=454111978]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="VBox/ScrollContainer/CenterContainer" unique_id=625816956]
+custom_minimum_size = Vector2(900, 0)
+layout_mode = 2
+
+[node name="Content" type="RichTextLabel" parent="VBox/ScrollContainer/CenterContainer/MarginContainer" unique_id=1164683828]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
